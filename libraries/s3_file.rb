@@ -6,7 +6,7 @@ require 'base64'
 module S3FileLib
   BLOCKSIZE_TO_READ = 1024 * 1000
   RestClient.proxy = ENV['http_proxy']
-  
+
   def self.build_headers(date, authorization, token)
     headers = {
       :date => date,
@@ -15,20 +15,30 @@ module S3FileLib
     if token
       headers['x-amz-security-token'] = token
     end
-        
+
     return headers
   end
-  
+
+  def self.file_exists?(bucket,remote_path,aws_access_key_id,aws_secret_access_key,token)
+    begin
+      remote_md5 = get_md5_from_s3(bucket,remote_path,aws_access_key_id,aws_secret_access_key,token)
+    rescue RestClient::ResourceNotFound
+      # If this branch is triggered, no file was found at the remote location.
+      remote_md5 = nil
+    end
+    return remote_md5.nil? ? false : true
+  end
+
   def self.get_md5_from_s3(bucket,path,aws_access_key_id,aws_secret_access_key,token)
     return get_digests_from_s3(bucket,path,aws_access_key_id,aws_secret_access_key,token)["md5"]
   end
-  
+
   def self.get_digests_from_s3(bucket,path,aws_access_key_id,aws_secret_access_key,token)
-    now, auth_string = get_s3_auth("HEAD", bucket,path,aws_access_key_id,aws_secret_access_key, token)
-    
+    now, auth_string = get_s3_auth("HEAD", bucket,path,aws_access_key_id,aws_secret_access_key,token,nil,nil)
+
     headers = build_headers(now, auth_string, token)
     response = RestClient.head('https://%s.s3.amazonaws.com%s' % [bucket,path], headers)
-    
+
     etag = response.headers[:etag].gsub('"','')
     digest = response.headers[:x_amz_meta_digest]
     digests = digest.nil? ? {} : Hash[digest.split(",").map {|a| a.split("=")}]
@@ -36,9 +46,9 @@ module S3FileLib
     return {"md5" => etag}.merge(digests)
   end
 
-  def self.get_from_s3(bucket,path,aws_access_key_id,aws_secret_access_key,token)   
-    now, auth_string = get_s3_auth("GET", bucket,path,aws_access_key_id,aws_secret_access_key, token)
-    
+  def self.get_from_s3(bucket,path,aws_access_key_id,aws_secret_access_key,token)
+    now, auth_string = get_s3_auth("GET", bucket,path,aws_access_key_id,aws_secret_access_key,token,nil,nil)
+
     headers = build_headers(now, auth_string, token)
 #    response = RestClient.get('https://%s.s3.amazonaws.com%s' % [bucket,path], headers)
     response = RestClient::Request.execute(:method => :get, :url => 'https://%s.s3.amazonaws.com%s' % [bucket,path], :raw_response => true, :headers => headers)
@@ -46,14 +56,27 @@ module S3FileLib
     return response
   end
 
-  def self.get_s3_auth(method, bucket,path,aws_access_key_id,aws_secret_access_key, token)
+  def self.push_to_s3(bucket,remote_path,aws_access_key_id,aws_secret_access_key,token,local_path,content_md5,content_type)
+    now, auth_string = get_s3_auth("PUT", bucket,remote_path,aws_access_key_id,aws_secret_access_key,token,content_md5,content_type)
+
+    headers = build_headers(now, auth_string, token)
+    headers[:content_type] = content_type
+    headers[:content_md5] = content_md5
+
+    url = 'https://%s.s3.amazonaws.com%s' % [bucket,remote_path]
+    response = RestClient.put(url, ::File.read(local_path), headers)
+
+    return response
+  end
+
+  def self.get_s3_auth(method, bucket,path,aws_access_key_id,aws_secret_access_key,token,content_md5,content_type)
     now = Time.now().utc.strftime('%a, %d %b %Y %H:%M:%S GMT')
-    string_to_sign = "#{method}\n\n\n%s\n" % [now]
-    
+    string_to_sign = "#{method}\n%s\n%s\n%s\n" % [content_md5, content_type, now]
+
     if token
       string_to_sign += "x-amz-security-token:#{token}\n"
     end
-    
+
     string_to_sign += "/%s%s" % [bucket,path]
 
     digest = digest = OpenSSL::Digest::Digest.new('sha1')
@@ -61,7 +84,7 @@ module S3FileLib
     signed_base64 = Base64.encode64(signed)
 
     auth_string = 'AWS %s:%s' % [aws_access_key_id,signed_base64]
-        
+
     [now,auth_string]
   end
 

@@ -10,27 +10,14 @@ action :create do
   # handle key specified without leading slash
   remote_path = ::File.join('', new_resource.remote_path)
 
-  # we need credentials to be mutable
-  aws_access_key_id = new_resource.aws_access_key_id
-  aws_secret_access_key = new_resource.aws_secret_access_key
-  token = new_resource.token
+  # Decryption key, provided if necessary
   decryption_key = new_resource.decryption_key
 
-  # if credentials not set, try instance profile
-  if aws_access_key_id.nil? && aws_secret_access_key.nil? && token.nil?
-    instance_profile_base_url = 'http://169.254.169.254/latest/meta-data/iam/security-credentials/'
-    begin
-      instance_profiles = RestClient.get(instance_profile_base_url)
-    rescue RestClient::ResourceNotFound, Errno::ETIMEDOUT # we can either 404 on an EC2 instance, or timeout on non-EC2
-      raise ArgumentError.new 'No credentials provided and no instance profile on this machine.'
-    end
-    instance_profile_name = instance_profiles.split.first
-    instance_profile = JSON.load(RestClient.get(instance_profile_base_url + instance_profile_name))
-
-    aws_access_key_id = instance_profile['AccessKeyId']
-    aws_secret_access_key = instance_profile['SecretAccessKey']
-    token = instance_profile['Token']
-  end
+  # we need credentials to be mutable
+  s3auth = S3Credentials::get_s3_credentials(new_resource.aws_access_key_id, new_resource.aws_secret_access_key, new_resource.token)
+  token = s3auth[:token]
+  aws_access_key_id = s3auth[:aws_access_key_id]
+  aws_secret_access_key = s3auth[:aws_secret_access_key]
 
   if ::File.exists?(new_resource.path)
     if decryption_key.nil?
