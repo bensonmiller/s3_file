@@ -4,20 +4,23 @@ require 'json'
 
 use_inline_resources
 
+def whyrun_supported?
+  true
+end
+
 action :create do
   download = true
-
-  # handle key specified without leading slash
-  remote_path = ::File.join('', new_resource.remote_path)
 
   # Decryption key, provided if necessary
   decryption_key = new_resource.decryption_key
 
-  # we need credentials to be mutable
-  s3auth = S3Credentials::get_s3_credentials(new_resource.aws_access_key_id, new_resource.aws_secret_access_key, new_resource.token)
-  token = s3auth[:token]
-  aws_access_key_id = s3auth[:aws_access_key_id]
-  aws_secret_access_key = s3auth[:aws_secret_access_key]
+  # Credentials are set through the load_current_resource method
+  token = @current_resource.token
+  aws_access_key_id = @current_resource.aws_access_key_id
+  aws_secret_access_key = @current_resource.aws_secret_access_key
+
+  # The remote_path param is also set intelligently through load_current_resource
+  remote_path = @current_resource.remote_path
 
   if ::File.exists?(new_resource.path)
     if decryption_key.nil?
@@ -78,4 +81,79 @@ action :create do
   end
 
   new_resource.updated_by_last_action(download || f.updated_by_last_action?)
+end
+
+
+action :upload do
+
+  # Credentials are set through the load_current_resource method
+  token = @current_resource.token
+  aws_access_key_id = @current_resource.aws_access_key_id
+  aws_secret_access_key = @current_resource.aws_secret_access_key
+
+  # The remote_path param is also set intelligently through load_current_resource
+  remote_path = @current_resource.remote_path
+
+  if @current_resource.exists_in_s3
+    remote_md5 = S3FileLib::get_md5_from_s3(new_resource.bucket,
+                                            remote_path,
+                                            aws_access_key_id,
+                                            aws_secret_access_key,
+                                            token)
+
+    if S3FileLib.verify_md5_checksum(remote_md5, new_resource.path)
+      Chef::Log.debug("Skipping upload; md5 of #{new_resource.path} matches file at S3 bucket: #{new_resource.bucket}::#{remote_path}.")
+      do_upload = false
+    else
+      Chef::Log.debug("File at #{new_resource.path} does not match MD5 of file at S3 bucket: #{new_resource.bucket}. Will upload file to #{remote_path}.")
+      do_upload = true
+    end
+  else # @current_resource does not exist
+    Chef::Log.debug("No file found at S3 bucket: #{@current_resource.bucket}, with path #{@current_resource.remote_path}. Will upload file #{@current_resource.path}.")
+    do_upload = true
+  end
+
+  if do_upload
+    converge_by("Upload file #{new_resource.path} to S3 bucket '#{new_resource.bucket}', with path '#{remote_path}'") do
+      local_md5_base64 = Digest::MD5.file(new_resource.path).base64digest
+      response = S3FileLib.push_to_s3(new_resource.bucket,
+                                      remote_path,
+                                      aws_access_key_id,
+                                      aws_secret_access_key,
+                                      token,
+                                      new_resource.path,
+                                      local_md5_base64,
+                                      new_resource.content_type)
+    end
+  end
+
+end
+
+def load_current_resource
+  @current_resource = Chef::Resource::S3File.new(@new_resource.name)
+  @current_resource.name(@new_resource.name)
+  @current_resource.bucket(@new_resource.bucket)
+  @current_resource.path(@new_resource.path)
+
+  filename = ::File.basename(@current_resource.path)
+  remote_path = @new_resource.remote_path
+  remote_path = "/#{remote_path}" unless remote_path.chars.first == '/'
+  @current_resource.remote_path(remote_path)
+
+  # Intelligent setting of credentials
+  s3auth = S3Credentials::get_s3_credentials(@new_resource.aws_access_key_id, @new_resource.aws_secret_access_key, @new_resource.token)
+  @current_resource.token(s3auth[:token])
+  @current_resource.aws_access_key_id(s3auth[:aws_access_key_id])
+  @current_resource.aws_secret_access_key(s3auth[:aws_secret_access_key])
+
+  # If we're uploading, determine whether the upload target already exists on S3.
+  if %w{upload}.include?(@action.to_s)
+    if S3FileLib::file_exists?(@current_resource.bucket,
+                               @current_resource.remote_path,
+                               @current_resource.aws_access_key_id,
+                               @current_resource.aws_secret_access_key,
+                               @current_resource.token)
+      @current_resource.exists_in_s3 = true
+    end
+  end
 end
