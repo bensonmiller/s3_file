@@ -12,6 +12,7 @@ attribute :group, :kind_of => String, :default => nil
 attribute :mode, :kind_of => [String, Integer], :default => nil
 attribute :decryption_key, :kind_of => String, :default => nil
 attribute :decrypted_file_checksum, :kind_of => String, :default => nil
+attribute :remote_must_exist, :kind_of => [TrueClass, FalseClass], :default => true
 
 # Needed to support :upload action
 attribute :content_md5, :kind_of => String, :default => nil

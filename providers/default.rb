@@ -48,7 +48,12 @@ action :create do
         end
       end
     end
+  else
+    # Setting the 'remote_must_exist' to false will prevent exceptions
+    # if the specified key (file) doesn't exist on S3.
+    download = false unless new_resource.remote_must_exist
   end
+
 
   if download
     response = S3FileLib::get_from_s3(new_resource.bucket, remote_path, aws_access_key_id, aws_secret_access_key, token)
@@ -78,6 +83,7 @@ action :create do
     owner new_resource.owner || ENV['user']
     group new_resource.group || ENV['user']
     mode new_resource.mode || '0644'
+    only_if { ::File.exist?(new_resource.path) }
   end
 
   new_resource.updated_by_last_action(download || f.updated_by_last_action?)
