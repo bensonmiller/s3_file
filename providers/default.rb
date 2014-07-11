@@ -51,7 +51,10 @@ action :create do
   else
     # Setting the 'remote_must_exist' to false will prevent exceptions
     # if the specified key (file) doesn't exist on S3.
-    download = false unless new_resource.remote_must_exist
+    unless new_resource.remote_must_exist
+      download = false
+      Chef::Log.warn("Skipping creation of s3_file. Attribute 'remote_must_exist' is set to false and no file found in S3 bucket '#{new_resource.bucket}' at path '#{remote_path}'.")
+    end
   end
 
 
