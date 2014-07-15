@@ -22,29 +22,31 @@ action :create do
   # The remote_path param is also set intelligently through load_current_resource
   remote_path = @current_resource.remote_path
 
-  if ::File.exists?(new_resource.path)
-    if decryption_key.nil?
-      if new_resource.decrypted_file_checksum.nil?
-        s3_md5 = S3FileLib::get_md5_from_s3(new_resource.bucket, remote_path, aws_access_key_id, aws_secret_access_key, token)
+  if S3FileLib::file_exists?(new_resource.bucket, remote_path, aws_access_key_id, aws_secret_access_key, token)
+    if ::File.exists?(new_resource.path)
+      if decryption_key.nil?
+        if new_resource.decrypted_file_checksum.nil?
+          s3_md5 = S3FileLib::get_md5_from_s3(new_resource.bucket, remote_path, aws_access_key_id, aws_secret_access_key, token)
 
-        if S3FileLib::verify_md5_checksum(s3_md5, new_resource.path)
-          Chef::Log.debug 'Skipping download, md5sum of local file matches file in S3.'
-          download = false
+          if S3FileLib::verify_md5_checksum(s3_md5, new_resource.path)
+            Chef::Log.debug 'Skipping download, md5sum of local file matches file in S3.'
+            download = false
+          end
+        #we have a decryption key so we must switch to the sha256 checksum
+        else
+          if S3FileLib::verify_sha256_checksum(new_resource.decrypted_file_checksum, new_resource.path)
+            Chef::Log.debug 'Skipping download, sha256 of local file matches recipe.'
+            download = false
+          end
         end
-      #we have a decryption key so we must switch to the sha256 checksum
+        # since our resource is a decrypted file, we must use the
+        # checksum provided by the resource to compare to the local file
       else
-        if S3FileLib::verify_sha256_checksum(new_resource.decrypted_file_checksum, new_resource.path)
-          Chef::Log.debug 'Skipping download, sha256 of local file matches recipe.'
-          download = false
-        end
-      end
-      # since our resource is a decrypted file, we must use the
-      # checksum provided by the resource to compare to the local file
-    else
-      unless new_resource.decrypted_file_checksum.nil?
-        if S3FileLib::verify_sha256_checksum(new_resource.decrypted_file_checksum, new_resource.path)
-          Chef::Log.debug 'Skipping download, sha256 of local file matches recipe.'
-          download = false
+        unless new_resource.decrypted_file_checksum.nil?
+          if S3FileLib::verify_sha256_checksum(new_resource.decrypted_file_checksum, new_resource.path)
+            Chef::Log.debug 'Skipping download, sha256 of local file matches recipe.'
+            download = false
+          end
         end
       end
     end
