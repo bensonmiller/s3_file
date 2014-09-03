@@ -10,12 +10,12 @@ An Amazon Web Services account and something in S3 to fetch. Or, if uploading, a
 
 Multi-part S3 uploads do not put the MD5 of the content in the ETag header. If x-amz-meta-digest is provided in User-Defined Metadata on the S3 Object it is processed as if it were a Digest header (RFC 3230).
 
-The MD5 of the local file will be checked against the MD5 from x-amz-meta-digest if it is present.  It not it will check against the ETag.  If there is no match or the local file is absent it will be downloaded.
+The MD5 of the local file will be checked against the MD5 from x-amz-meta-digest if it is present.  It not it will check against the ETag.  If there is no match or the local file is absent it will be downloaded. The same is true of the :upload action, which will not overwrite a file on S3 unless there is a mismatch between the MD5 sum of the remote (S3) file and the server's local copy of the file.
 
 If credentials are not provided, s3_file will attempt to use the first instance profile associated with the instance. See documentation at http://docs.aws.amazon.com/IAM/latest/UserGuide/instance-profiles.html for more on instance profiles.
 
 ##USAGE:
-s3_file acts like other file resources.  The only supported action is :create, which is the default.
+With the exception of the :upload action, s3_file acts like other file resources.  The two supported actions are :create and :upload (:create is the default, of course). The :upload action will push a file on local disk to an S3 bucket (and path within the bucket) as specified.
 
 Attribute Parameters:
 
@@ -28,8 +28,15 @@ Attribute Parameters:
 * `group` - the group owner of the file. (optional)
 * `mode` - the octal mode of the file. (optional)
 * `decryption_key` - the 32 character SHA256 key used to encrypt your S3 file. (optional)
+* `descypted_file_checksum` - the SHA256 hex digest of the decrypted file (optional)
+* `remote_must_exist` - Whether the S3 file must exist. If set to `true` and file does not exist on S3, the Chef run will fail. Defaults to `true`.
 
-Example:
+Attribute parameters for :upload action:
+
+* `content_md5` - MD5 checksum of the object to be uploaded. (optional)
+* `content_type` - Content type to be associated with the uploaded object. Defaults to 'binary/octet-stream'. (optional)
+
+Example for :create action:
 
     s3_file "/tmp/somefile" do
     	remote_path "/my/s3/key"
@@ -42,7 +49,17 @@ Example:
     	action :create
     	decryption_key "my SHA256 digest key"
     	decrypted_file_checksum "SHA256 hex digest of decrypted file"
+    end
 
+Example for :upload action:
+
+    s3_file "/path/to/somefile" do
+      bucket 'my-s3-bucket'
+      remote_path '/path/within/s3-bucket/to/somefile'
+      aws_access_key_id 'mykeyid'
+      aws_secret_access_key 'mykey'
+      action :upload
+      sensitive true
     end
 
 ##MD5 and Multi-Part Upload:
@@ -72,3 +89,6 @@ To create your cipher, run `bin/s3_crypto -g > my_new_key` and a new 256-bit (32
 Try `bin/s3_crypto -g > my_new_key`.
 
 You can use the utility `bin/s3_crypto` to encrypt files prior to uploading to S3 and to decrypt files prior to make sure the encryption is working.
+
+##Testing
+No testing yet. :(
