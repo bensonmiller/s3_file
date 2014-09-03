@@ -61,8 +61,13 @@ module S3FileLib
     headers[:content_md5] = content_md5
 
     url = 'https://%s.s3.amazonaws.com%s' % [bucket, remote_path]
-    response = RestClient.put(url, ::File.read(local_path), headers)
-    response
+    RestClient.put(url, ::File.read(local_path), headers){ |response, request, result, &block|
+      if [301, 302, 307].include? response.code
+        response.follow_redirection(request, result, &block)
+      else
+        response.return!(request, result, &block)
+      end
+    }    
   end
 
   def self.get_s3_auth(method, bucket, path, aws_access_key_id, aws_secret_access_key, token, content_md5, content_type)
