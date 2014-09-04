@@ -1,5 +1,5 @@
 ##DESCRIPTION:
-An LWRP that can be used to fetch files or upload files from S3.
+An LWRP that can be used to fetch files or upload files from S3. Okay?
 
 I created this LWRP to solve the chicken-and-egg problem of fetching files from S3 on the first Chef run on a newly provisioned machine. Ruby libraries that are installed on that first run are not available to Chef during the run, so I couldn't use a library like Fog to get what I needed from S3. It was later extended to support file upload to S3 with the same resource type.
 
