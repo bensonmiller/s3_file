@@ -4,7 +4,7 @@ require 'openssl'
 require 'base64'
 
 module S3FileLib
-  BLOCKSIZE_TO_READ = 1024 * 1000
+  BLOCKSIZE_TO_READ ||= 1024 * 1000
   RestClient.proxy = ENV['http_proxy']
 
   def self.build_headers(date, authorization, token)
@@ -67,7 +67,7 @@ module S3FileLib
       else
         response.return!(request, result, &block)
       end
-    }    
+    }
   end
 
   def self.get_s3_auth(method, bucket, path, aws_access_key_id, aws_secret_access_key, token, content_md5, content_type)
